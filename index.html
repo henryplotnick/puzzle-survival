@@ -155,9 +155,9 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-off
   <p class="lede">Puzzles start easy and get harder. Three wrong moves ends the run. No clock.</p>
   <button class="mixed" id="mixed"><div><b>Mixed themes</b><span id="mixedsub"></span></div><div class="go">&rarr;</div></button>
   <section class="order" id="ordercard" hidden>
-    <button class="ordergo" id="ordergo"><div><b id="ordertitle">Game order</b><span id="ordersub"></span></div><div class="go">&rarr;</div></button>
-    <form class="orderfrom" id="orderfrom"><label for="ordermove">Or start from move</label><input id="ordermove" type="number" inputmode="numeric" min="2" max="150" value="2"><button class="btn" type="submit">Start</button></form>
-    <p class="ordernote">Every puzzle in the order it came up in its game: earliest moves first, and easier ones first within each move. Three wrong moves ends the run. Your place in each move is saved on this device.</p>
+    <button class="ordergo" id="ordergo"><div><b>Game order</b><span id="ordersub"></span></div><div class="go">&rarr;</div></button>
+    <form class="orderfrom" id="orderfrom"><label for="ordermove">Start from move</label><input id="ordermove" type="number" inputmode="numeric" min="2" max="150" value="2"></form>
+    <p class="ordernote">A steady march through the game: three random puzzles from each move number, then on to the next move. Three wrong moves ends the run.</p>
   </section>
   <div id="groups" style="display:flex;flex-direction:column;gap:20px"></div>
   <p class="credit">Puzzles come from the <a href="https://database.lichess.org/#puzzles">Lichess puzzle database</a> (public domain). <span id="dbnote"></span> Piece set by Colin M.L. Burnett.</p>
@@ -275,17 +275,14 @@ function getIndex(t, b){
   return p;
 }
 /* game order: m/<move>/<page>.bin = positions of that move's puzzles, easiest first */
-var MO = null, movePages = {}, orderPos = null;
-try { orderPos = JSON.parse(localStorage.getItem('survival-order') || 'null'); } catch(e) {}
-if (orderPos && !orderPos.at) orderPos.at = {};
-/* orderPos = {m, i, at:{move: how far you are within that move}} so jumping to another move never loses your place */
-function saveOrder(c){ var at = orderPos ? orderPos.at : {}; at[c.m] = c.i; orderPos = {m:c.m, i:c.i, at:at}; try { localStorage.setItem('survival-order', JSON.stringify(orderPos)); } catch(e) {} }
-function orderNorm(c){
-  if (!MO || !c) return null;
-  var m = Math.max(MO.min, Math.floor(+c.m) || MO.min), i = Math.max(0, Math.floor(+c.i) || 0);
-  for (; m <= MO.max; m++, i = (orderPos && orderPos.at[m]) || 0) if (i < (MO.counts[m] || 0)) return {m:m, i:i};
-  return null;
+var MO = null, movePages = {}, orderStart = 0, PER_MOVE = 3;
+try { orderStart = parseInt(localStorage.getItem('survival-order-start'), 10) || 0; } catch(e) {}
+function startMove(){
+  var m = parseInt($('ordermove').value, 10);
+  if (!(m >= MO.min)) m = MO.min;
+  return Math.min(MO.max, m);
 }
+function nextMove(m){ for (; m <= MO.max; m++) if (MO.counts[m]) return m; return 0; }
 function getMovePage(m, pg){
   var k = m + '/' + pg;
   if (movePages[k]) return movePages[k];
@@ -337,12 +334,11 @@ function show(id){
 }
 function renderHome(){
   $('mixedsub').textContent = (M ? M.n.toLocaleString() + ' puzzles' : 'Loading puzzles\u2026') + (best.mix ? ' · best ' + best.mix : '');
-  var oc = orderNorm(orderPos || {m:0, i:0});
   $('ordercard').hidden = !MO;
   if (MO) {
-    $('ordertitle').textContent = orderPos ? 'Continue game order' : 'Game order';
-    $('ordersub').textContent = (oc ? 'Move ' + oc.m + ' \u00b7 puzzle ' + (oc.i + 1).toLocaleString() + ' of ' + MO.counts[oc.m].toLocaleString() : 'You have played every puzzle') + (best.order ? ' \u00b7 best ' + best.order : '');
-    $('ordermove').min = MO.min; $('ordermove').max = MO.max; $('ordermove').value = oc ? oc.m : MO.min;
+    $('ordermove').min = MO.min; $('ordermove').max = MO.max;
+    if (!$('ordermove').dataset.set) { $('ordermove').value = Math.max(MO.min, Math.min(MO.max, orderStart || MO.min)); $('ordermove').dataset.set = 1; }
+    orderSub();
   }
   var seen = {}, html = '';
   function chip(t){
@@ -361,16 +357,22 @@ $('groups').addEventListener('click', function(e){
   var b = e.target.closest('.chip'); if (b) startRun(b.getAttribute('data-t'));
 });
 $('mixed').addEventListener('click', function(){ startRun('mix'); });
-$('ordergo').addEventListener('click', function(){ startRun('order'); });
-$('orderfrom').addEventListener('submit', function(e){
-  e.preventDefault();
-  var m = Math.max(MO.min, Math.min(MO.max, parseInt($('ordermove').value, 10) || MO.min));
-  startRun('order', null, {m:m, i:(orderPos && orderPos.at[m]) || 0});
-});
-$('again').addEventListener('click', function(){ startRun(run.theme); });
+function orderSub(){
+  var m = startMove(), b = best['order-' + m];
+  $('ordersub').textContent = 'From move ' + m + ' \u00b7 ' + PER_MOVE + ' puzzles per move' + (b ? ' \u00b7 best ' + b : '');
+}
+function goOrder(){
+  var m = startMove(); $('ordermove').value = m; orderStart = m;
+  try { localStorage.setItem('survival-order-start', m); } catch(e) {}
+  startRun('order', null, m);
+}
+$('ordergo').addEventListener('click', goOrder);
+$('orderfrom').addEventListener('submit', function(e){ e.preventDefault(); goOrder(); });
+$('ordermove').addEventListener('input', function(){ if (MO) orderSub(); });
+$('again').addEventListener('click', function(){ startRun(run.theme, null, run.start); });
 $('retry').addEventListener('click', function(){
   var missed = run.log.filter(function(e){ return !e.ok; }).map(function(e){ return e.p; });
-  if (missed.length) startRun(run.theme, missed);
+  if (missed.length) startRun(run.theme, missed, run.start);
 });
 $('next').addEventListener('click', function(){
   this.hidden = true;
@@ -386,7 +388,7 @@ var START = 600, STEP = 40, MAXR = 2900, STRIKES = 3;
 function startRun(theme, missed, from){
   if (!M || (theme === 'order' && !MO)) return;
   if (run) run.over = true;
-  run = {theme:theme, used:{}, score:0, strikes:0, n:0, log:[], review:!!missed, queue:missed ? missed.slice() : null, total:missed ? missed.length : 0, pre:null, over:false, cur:theme === 'order' ? (from || orderPos || {m:0, i:0}) : null};
+  run = {theme:theme, used:{}, score:0, strikes:0, n:0, log:[], review:!!missed, queue:missed ? missed.slice() : null, total:missed ? missed.length : 0, pre:null, over:false, start:from || 0, key:theme === 'order' ? 'order-' + from : theme, cur:theme === 'order' ? {m:from, k:0} : null};
   $('gtheme').textContent = label(theme) + (missed ? ' · retry' : '');
   $('grating').textContent = ''; $('board').innerHTML = ''; $('arrows').innerHTML = '';
   show('game'); hud(); nextPuzzle();
@@ -395,12 +397,23 @@ function startRun(theme, missed, from){
 function pick(r, k){
   if (r.queue) return Promise.resolve(r.queue.shift() || null);
   if (r.theme === 'order') {
-    var c = orderNorm(r.cur); if (!c) return Promise.resolve(null);
-    r.cur = {m:c.m, i:c.i + 1};
-    return getMovePage(c.m, Math.floor(c.i / MO.page)).then(function(arr){
-      var g = arr[c.i % MO.page];
-      return getChunk(Math.floor(g / M.chunk)).then(function(lines){ var p = toPuzzle(lines[g % M.chunk]); p.pos = c; return p; });
-    }).catch(function(e){ r.cur = c; throw e; });
+    /* PER_MOVE random puzzles from each move number, then the next move */
+    var c = r.cur, m = nextMove(c.k >= Math.min(PER_MOVE, MO.counts[c.m] || 0) ? c.m + 1 : c.m), kk = m === c.m ? c.k : 0;
+    if (!m) return Promise.resolve(null);
+    r.cur = {m:m, k:kk + 1};
+    var tryOne = function(left){
+      var i = rnd(MO.counts[m]);
+      return getMovePage(m, Math.floor(i / MO.page)).then(function(arr){
+        var g = arr[i % MO.page];
+        return getChunk(Math.floor(g / M.chunk)).then(function(lines){
+          var l = lines[g % M.chunk];
+          if (r.used[lineId(l)]) { if (left > 0) return tryOne(left - 1); return null; }
+          r.used[lineId(l)] = 1;
+          var p = toPuzzle(l); p.pos = {m:m}; return p;
+        });
+      });
+    };
+    return tryOne(30).catch(function(e){ r.cur = c; throw e; });
   }
   var target = Math.min(START + k * STEP, MAXR), b0 = bandOf(target), nb = M.bandStart.length - 1;
   var cnt = r.theme === 'mix' ? null : M.counts[r.theme];
@@ -458,7 +471,7 @@ function begin(p){
   last = p.lm ? [p.lm.slice(0,2), p.lm.slice(2,4)] : null;
   $('next').hidden = true; rev = null; $('stepper').hidden = true;
   $('grating').textContent = (run.review ? 'Missed puzzle ' + run.n + ' of ' + run.total :
-    p.pos ? 'Move ' + p.pos.m + ' · ' + (p.pos.i + 1).toLocaleString() + ' of ' + MO.counts[p.pos.m].toLocaleString() : 'Puzzle ' + run.n) + ' · rated ' + p.r;
+    p.pos ? 'Puzzle ' + run.n + ' · move ' + p.pos.m : 'Puzzle ' + run.n) + ' · rated ' + p.r;
   setStatus('<span class="side ' + orient + '"></span>' + (orient === 'w' ? 'White' : 'Black') + ' to move', '');
   draw(); if (last) slide(last[0], last[1]);
   locked = false;
@@ -627,15 +640,14 @@ function play(from, to, promo, slid){
     }, 380);
   } else failed(from, to, want);
 }
-function keepPlace(){ if (!run.review && cur.p.pos) saveOrder({m:cur.p.pos.m, i:cur.p.pos.i + 1}); }
 function solved(){
-  locked = true; run.score++; run.log.push({p:cur.p, ok:true}); hud(); keepPlace();
+  locked = true; run.score++; run.log.push({p:cur.p, ok:true}); hud();
   marks = {}; marks[last[1]] = 'ok'; draw();
   setStatus('Solved', 'good');
   timer = setTimeout(nextPuzzle, 550);
 }
 function failed(from, to, want){
-  locked = true; if (!run.review) run.strikes++; run.log.push({p:cur.p, ok:false}); hud(); keepPlace();
+  locked = true; if (!run.review) run.strikes++; run.log.push({p:cur.p, ok:false}); hud();
   marks = {}; marks[to] = 'no'; draw();
   setStatus('Wrong move', 'bad');
   timer = setTimeout(function(){
@@ -678,13 +690,12 @@ document.addEventListener('keydown', function(e){
 function endRun(){
   rev = null; $('stepper').hidden = true; run.over = true;
   locked = true; $('next').hidden = true;
-  var prev = best[run.theme] || 0, isBest = !run.review && run.score > prev;
-  if (isBest) { best[run.theme] = run.score; saveBest(); }
-  $('etheme').textContent = label(run.theme) + (run.review ? ' · retry' : '');
+  var prev = best[run.key] || 0, isBest = !run.review && run.score > prev;
+  if (isBest) { best[run.key] = run.score; saveBest(); }
+  $('etheme').textContent = label(run.theme) + (run.theme === 'order' ? ' from move ' + run.start : '') + (run.review ? ' · retry' : '');
   $('ebig').textContent = run.score;
   $('esub').innerHTML = run.review ? 'of ' + run.total + ' missed ' + (run.total === 1 ? 'puzzle' : 'puzzles') + ' solved on retry' :
     (run.score === 1 ? 'puzzle solved' : 'puzzles solved') + ' · ' + (isBest ? '<b>new best</b>' : 'best ' + prev);
-  $('again').textContent = run.theme === 'order' ? 'Continue from here' : 'Play again';
   var nMiss = run.log.filter(function(e){ return !e.ok; }).length;
   $('retry').hidden = !nMiss;
   $('retry').textContent = nMiss === 1 ? 'Retry the one you missed' : 'Retry the ' + nMiss + ' you missed';
