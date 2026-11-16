@@ -52,7 +52,13 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-off
 .order{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:4px 14px 12px;display:flex;flex-direction:column;gap:10px}
 .ordergo{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;text-align:left;padding:12px 4px 2px}
 .ordergo b{display:block;font-family:var(--display);font-size:19px;font-weight:800}
-.orderhead{padding:12px 4px 0}.orderhead b{display:block;font-family:var(--display);font-size:22px;font-weight:800;margin-bottom:4px}
+.orderhead{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;text-align:left;padding:12px 4px 4px}
+.orderhead b{display:block;font-family:var(--display);font-size:22px;font-weight:800}
+.orderhead span{font-size:14px;color:var(--muted)}
+.orderhead .chev{font-size:20px;color:var(--accent);transition:transform .15s}
+.orderhead[aria-expanded="true"] .chev{transform:rotate(180deg)}
+#orderbody{display:flex;flex-direction:column;gap:10px}#orderbody[hidden]{display:none}
+#orderbody .ordernote{padding:0 4px}
 .ordergo{border-top:1px solid var(--line)}
 .orderfrom.sub{border-top:0;padding-top:0}
 .orderfrom.sub label{font-size:14px;color:var(--muted);font-weight:400}
@@ -163,13 +169,16 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-off
   <p class="lede">Puzzles start easy and get harder. Three wrong moves ends the run. No clock.</p>
   <button class="mixed" id="mixed"><div><b>Mixed themes</b><span id="mixedsub"></span></div><div class="go">&rarr;</div></button>
   <section class="order" id="ordercard" hidden>
-    <div class="orderhead"><b>Game order</b><p class="ordernote">Puzzles in the order they came up in their games, earliest moves first. Three wrong moves ends the run.</p></div>
+    <button class="orderhead" id="ordertoggle" aria-expanded="false" aria-controls="orderbody"><div><b>Game order</b><span>Puzzles in the order they came up in their games</span></div><div class="go chev" aria-hidden="true">&#9662;</div></button>
+    <div id="orderbody" hidden>
+      <p class="ordernote">Earliest moves first. Three wrong moves ends the run.</p>
     <button class="ordergo" id="ordergo"><div><b>A few from each move</b><span id="ordersub"></span></div><div class="go">&rarr;</div></button>
     <form class="orderfrom sub" id="orderfrom"><label for="ordermove">Start from move</label><input id="ordermove" type="number" inputmode="numeric" min="2" max="150" value="2"></form>
     <div class="orderfrom sub"><label for="orderper">Puzzles per move (up to 10)</label><input id="orderper" type="number" inputmode="numeric" min="1" max="10" value="3"></div>
     <button class="ordergo" id="everygo"><div><b>Every puzzle</b><span id="everysub"></span></div><div class="go">&rarr;</div></button>
     <form class="orderfrom sub" id="everyfrom"><label for="everymove">Move number</label><input id="everymove" type="number" inputmode="numeric" min="2" max="150" value="2"></form>
     <div class="orderslide"><label for="everyat" id="everyatl">Start at puzzle 1</label><input id="everyat" type="range" min="1" max="9" step="1" value="1"></div>
+    </div>
   </section>
   <div id="groups" style="display:flex;flex-direction:column;gap:20px"></div>
   <p class="credit">Puzzles come from the <a href="https://database.lichess.org/#puzzles">Lichess puzzle database</a> (public domain). <span id="dbnote"></span> Piece set by Colin M.L. Burnett.</p>
@@ -418,6 +427,10 @@ function goEvery(){
   var sl = $('everyat'), em = +sl.dataset.m; $('everymove').value = em;
   startRun('every', null, everyTouched ? {m:em, i:Math.max(0, (parseInt(sl.value, 10) || 1) - 1)} : {m:em, i:placeIn(em)});
 }
+$('ordertoggle').addEventListener('click', function(){
+  var open = this.getAttribute('aria-expanded') !== 'true';
+  this.setAttribute('aria-expanded', open); $('orderbody').hidden = !open;
+});
 $('ordergo').addEventListener('click', goOrder);
 $('everygo').addEventListener('click', goEvery);
 $('orderfrom').addEventListener('submit', function(e){ e.preventDefault(); goOrder(); });
@@ -458,6 +471,7 @@ function startRun(theme, missed, from){
     cur:theme === 'order' ? {m:fm, k:0} : theme === 'every' ? (typeof from === 'object' ? from : {m:fm, i:placeIn(fm)}) : null};
   $('gtheme').textContent = label(theme) + (missed ? ' · retry' : '');
   $('grating').textContent = ''; $('board').innerHTML = ''; $('arrows').innerHTML = '';
+  setStatus('', '');
   show('game'); hud(); nextPuzzle();
 }
 /* choose puzzle number k (0-based) of a run: random puzzle of the theme in the rating band for that step */
