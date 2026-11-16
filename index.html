@@ -789,7 +789,7 @@ function endRun(){
 renderHome();
 fetch('manifest.json').then(function(r){ if (!r.ok) throw 0; return r.json(); }).then(function(m){
   M = m; THEMES = m.themes; renderHome();
-  fetch('m/index.json').then(function(r){ if (!r.ok) throw 0; return r.json(); }).then(function(mo){ MO = mo; renderHome(); }).catch(function(){});
+  fetch('m/index.json?v=2').then(function(r){ if (!r.ok) throw 0; return r.json(); }).then(function(mo){ MO = mo; renderHome(); }).catch(function(){});
   $('dbnote').textContent = 'All ' + m.n.toLocaleString() + ' puzzles from the ' + m.date + ' database file.';
 }).catch(function(){ $('mixedsub').textContent = 'Could not load the puzzle list. Reload to try again.'; });
 
