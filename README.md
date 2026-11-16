@@ -10,6 +10,7 @@ All 6,193,530 puzzles from the [Lichess puzzle database](https://database.liches
 
 - `c/NN/<chunk>.gz` holds 512 puzzles per file, with all puzzles sorted by rating.
 - `i/<theme>/<band>.bin` lists where a theme's puzzles are for one 25-point rating band.
+- `m/<move>/<page>.bin` lists every puzzle that occurs at one move number of its game, easiest first, for the game-order mode.
 - `manifest.json` has the theme list and per-band counts.
 
 To rebuild from a newer database file:
@@ -17,6 +18,7 @@ To rebuild from a newer database file:
 ```
 pip install zstandard numpy
 python3 tools/build_data.py lichess_db_puzzle.csv.zst . 2026-11-01
+python3 tools/build_moves.py lichess_db_puzzle.csv.zst .
 ```
 
 Note that the build script deletes and recreates its output folder, so point it at a scratch folder and copy `c/`, `i/` and `manifest.json` over.
