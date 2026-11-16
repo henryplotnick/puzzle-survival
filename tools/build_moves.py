@@ -31,14 +31,16 @@ for g, pid in samples:
     if not lines[g % CH].startswith(pid + '|'): bad += 1
 print('position check', len(samples), 'bad', bad, flush=True); assert bad == 0
 if os.path.exists(out + '/m'): shutil.rmtree(out + '/m')
-counts = {}; tot = 0; files = 0
+counts = {}; quant = {}; tot = 0; files = 0
 for m in np.unique(MV).tolist():
     sel = np.nonzero(MV == m)[0]
     o = sel[np.lexsort((G[sel], r[sel]))]           # easier first, ties by position
     arr = G[o].astype('<u4'); counts[m] = int(len(arr))
+    # ratings at 65 evenly spaced places, so the page can show roughly how hard a given place is
+    quant[m] = [int(r[o[round(k*(len(o)-1)/64)]]) for k in range(65)]
     d = '%s/m/%d' % (out, m); os.makedirs(d)
     for pg in range(0, len(arr), PAGE):
         b = arr[pg:pg+PAGE].tobytes(); tot += len(b); files += 1
         open('%s/%d.bin' % (d, pg // PAGE), 'wb').write(b)
-json.dump({'min':min(counts), 'max':max(counts), 'page':PAGE, 'counts':counts}, open(out + '/m/index.json','w'), separators=(',',':'))
+json.dump({'min':min(counts), 'max':max(counts), 'page':PAGE, 'counts':counts, 'q':quant}, open(out + '/m/index.json','w'), separators=(',',':'))
 print('moves', len(counts), 'files', files, 'bytes', tot)

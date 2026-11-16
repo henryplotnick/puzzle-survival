@@ -62,6 +62,10 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-off
 .orderfrom label{flex:1;font-size:15px;font-weight:500}
 .orderfrom input{width:72px;min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);font:inherit;font-weight:600;text-align:center}
 .orderfrom .btn{flex:0 0 auto;min-height:44px;padding:0 18px}
+.orderslide{display:flex;flex-direction:column;gap:2px;padding:0 4px}
+.orderslide label{font-size:14px;color:var(--muted)}
+.orderslide label b{color:var(--ink);font-weight:600}
+.orderslide input{width:100%;min-height:40px;margin:0;accent-color:var(--accent)}
 .ordernote{margin:0;font-size:13px;color:var(--muted)}
 .group h2{font-size:12px;font-weight:600;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
 .chips{display:grid;grid-template-columns:1fr 1fr;gap:8px}
@@ -164,6 +168,7 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-off
     <button class="ordergo" id="ordergo"><div><b>A few from each move</b><span id="ordersub"></span></div><div class="go">&rarr;</div></button>
     <div class="orderfrom sub"><label for="orderper">Puzzles per move (up to 10)</label><input id="orderper" type="number" inputmode="numeric" min="1" max="10" value="3"></div>
     <button class="ordergo" id="everygo"><div><b>Every puzzle</b><span id="everysub"></span></div><div class="go">&rarr;</div></button>
+    <div class="orderslide"><label for="everyat" id="everyatl">Start at puzzle 1</label><input id="everyat" type="range" min="1" max="9" step="1" value="1"></div>
   </section>
   <div id="groups" style="display:flex;flex-direction:column;gap:20px"></div>
   <p class="credit">Puzzles come from the <a href="https://database.lichess.org/#puzzles">Lichess puzzle database</a> (public domain). <span id="dbnote"></span> Piece set by Colin M.L. Burnett.</p>
@@ -380,10 +385,23 @@ $('groups').addEventListener('click', function(e){
   var b = e.target.closest('.chip'); if (b) startRun(b.getAttribute('data-t'));
 });
 $('mixed').addEventListener('click', function(){ startRun('mix'); });
+var everyTouched = false;
+/* rough rating of the puzzle at place i (0-based) of move m, from 65 evenly spaced markers */
+function eloAt(m, i){
+  var q = MO.q && MO.q[m], n = MO.counts[m]; if (!q) return 0;
+  var x = n > 1 ? i / (n - 1) * 64 : 0, a = Math.floor(x), b = Math.min(64, a + 1);
+  return Math.round((q[a] + (q[b] - q[a]) * (x - a)) / 5) * 5;
+}
 function orderSub(){
   var m = startMove(), per = perMove(), b = best['order-' + m + '-' + per], c = orderNorm({m:m, i:placeIn(m)});
   $('ordersub').textContent = per + (per === 1 ? ' random puzzle' : ' random puzzles') + ' per move, from move ' + m + (b ? ' · best ' + b : '');
-  $('everysub').textContent = (c ? 'Easiest first · move ' + c.m + ', puzzle ' + (c.i + 1).toLocaleString() + ' of ' + MO.counts[c.m].toLocaleString() : 'Nothing left from this move on') + (best.every ? ' · best ' + best.every : '');
+  /* the slider covers the move where Every puzzle would resume; dragging it picks another place in that move */
+  var sm = c ? c.m : m, n = MO.counts[sm] || 1, sl = $('everyat');
+  if (sl.dataset.m !== String(sm)) { sl.dataset.m = sm; sl.max = n; sl.value = c ? c.i + 1 : n; everyTouched = false; }
+  var at = Math.max(1, Math.min(n, parseInt(sl.value, 10) || 1)), elo = eloAt(sm, at - 1);
+  $('everysub').textContent = (c || everyTouched ? 'Easiest first · move ' + sm + ', puzzle ' + at.toLocaleString() + ' of ' + n.toLocaleString() : 'Nothing left from this move on') + (best.every ? ' · best ' + best.every : '');
+  $('everyatl').innerHTML = 'Start at puzzle <b>' + at.toLocaleString() + '</b> of ' + n.toLocaleString() + (elo ? ' · about <b>' + elo + '</b> Elo' : '');
+  sl.disabled = !MO.counts[sm];
 }
 function rememberStart(m){
   $('ordermove').value = m; orderStart = m;
@@ -397,13 +415,16 @@ function goOrder(){
 }
 function goEvery(){
   var m = startMove(); rememberStart(m);
-  startRun('every', null, {m:m, i:placeIn(m)});
+  var sl = $('everyat'), sm = +sl.dataset.m;
+  var c = everyTouched ? {m:sm, i:Math.max(0, (parseInt(sl.value, 10) || 1) - 1)} : (orderNorm({m:m, i:placeIn(m)}) || {m:m, i:0});
+  startRun('every', null, c);
 }
 $('ordergo').addEventListener('click', goOrder);
 $('everygo').addEventListener('click', goEvery);
 $('orderfrom').addEventListener('submit', function(e){ e.preventDefault(); goOrder(); });
 $('ordermove').addEventListener('input', function(){ if (MO) orderSub(); });
 $('orderper').addEventListener('input', function(){ if (MO) orderSub(); });
+$('everyat').addEventListener('input', function(){ everyTouched = true; if (MO) orderSub(); });
 $('again').addEventListener('click', function(){
   if (run.theme === 'every') startRun('every', null, orderNorm(orderPos) || {m:run.start, i:placeIn(run.start)});
   else startRun(run.theme, null, run.start);
@@ -419,6 +440,7 @@ $('next').addEventListener('click', function(){
 $('tohome').addEventListener('click', function(){
   var c = run && run.theme === 'every' ? orderNorm(orderPos) : null;
   if (c) rememberStart(c.m);          /* so Every puzzle picks up at the move you reached */
+  $('everyat').dataset.m = '';
   renderHome(); show('home');
 });
 $('quit').addEventListener('click', function(){ if (run) { clearTimeout(timer); endRun(); } });
