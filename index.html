@@ -508,7 +508,7 @@ function pick(r, k){
   }
   var target = Math.min(START + k * STEP, MAXR), b0 = bandOf(target), nb = M.bandStart.length - 1;
   var cnt = r.theme === 'mix' ? null : M.counts[r.theme];
-  function has(b){ return cnt ? cnt[b] > 0 : M.bandStart[b + 1] > M.bandStart[b]; }
+  function has(b){ return !(r.dead && r.dead[b]) && (cnt ? cnt[b] > 0 : M.bandStart[b + 1] > M.bandStart[b]); }
   var b = -1;
   for (var d = 0; d < nb && b < 0; d++){
     if (b0 + d < nb && has(b0 + d)) b = b0 + d; else if (b0 - d >= 0 && has(b0 - d)) b = b0 - d;
@@ -525,15 +525,16 @@ function pick(r, k){
     });
   }
   return getIndex(r.theme, b).then(function(arr){
-    function attempt(left){
-      var g = arr[rnd(arr.length)];
-      return getChunk(Math.floor(g / M.chunk)).then(function(lines){
-        var l = lines[g % M.chunk];
-        if (l && !r.used[lineId(l)]) return take(l);
-        return left > 0 ? attempt(left - 1) : null;
-      });
-    }
-    return attempt(25);
+    /* a rating band can hold a single puzzle for a rare theme: once a band is used up, mark it and look further out */
+    var ug = r.usedG || (r.usedG = {}), g;
+    if (arr.length <= 500) {
+      var free = arr.filter(function(x){ return !ug[x]; });
+      if (!free.length) { (r.dead || (r.dead = {}))[b] = 1; return pick(r, k); }
+      g = free[rnd(free.length)];
+    } else { var tries = 0; do { g = arr[rnd(arr.length)]; } while (ug[g] && ++tries < 60); }
+    ug[g] = 1;
+    return getChunk(Math.floor(g / M.chunk)).then(function(lines){ return take(lines[g % M.chunk]); })
+      .catch(function(e){ delete ug[g]; throw e; });
   });
 }
 function nextPuzzle(){
