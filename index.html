@@ -57,7 +57,9 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-off
 .orderhead span{font-size:14px;color:var(--muted)}
 .orderhead .chev{font-size:20px;color:var(--accent);transition:transform .15s}
 .orderhead[aria-expanded="true"] .chev{transform:rotate(180deg)}
-#orderbody{display:flex;flex-direction:column;gap:10px}#orderbody[hidden]{display:none}
+#orderbody,#setbody{display:flex;flex-direction:column;gap:10px}#orderbody[hidden],#setbody[hidden]{display:none}
+#setbody .ordernote{padding:0 4px}
+#ahead{font-size:13px;color:var(--muted)}
 #orderbody .ordernote{padding:0 4px}
 .ordergo{border-top:1px solid var(--line)}
 .orderfrom.sub{border-top:0;padding-top:0}
@@ -180,6 +182,15 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-off
     <div class="orderslide"><label for="everyat" id="everyatl">Start at puzzle 1</label><input id="everyat" type="range" min="1" max="9" step="1" value="1"></div>
     </div>
   </section>
+  <section class="order" id="setcard">
+    <button class="orderhead" id="settoggle" aria-expanded="false" aria-controls="setbody"><div><b>Settings</b><span id="setsub"></span></div><div class="go chev" aria-hidden="true">&#9662;</div></button>
+    <div id="setbody" hidden>
+      <div class="orderfrom sub"><label for="setretry">Replays of each missed puzzle (0 to 5)</label><input id="setretry" type="number" inputmode="numeric" min="0" max="5" value="2"></div>
+      <p class="ordernote">After a run you can replay the puzzles you got wrong. Each one comes back this many times. 0 turns replays off.</p>
+      <div class="orderfrom sub"><label for="setahead">Puzzles loaded ahead (1 to 50)</label><input id="setahead" type="number" inputmode="numeric" min="1" max="50" value="10"></div>
+      <p class="ordernote">The game fetches this many puzzles in advance, so a run keeps going when your connection drops.</p>
+    </div>
+  </section>
   <div id="groups" style="display:flex;flex-direction:column;gap:20px"></div>
   <p class="credit">Puzzles come from the <a href="https://database.lichess.org/#puzzles">Lichess puzzle database</a> (public domain). <span id="dbnote"></span> Piece set by Colin M.L. Burnett.</p>
 </main>
@@ -197,7 +208,7 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-off
   </div>
   <div class="status" id="status" aria-live="polite"></div>
   <div class="nextrow"><span id="stepper" hidden><button class="btn step" id="sback" aria-label="Step back">&#9664;</button><button class="btn step" id="sfwd" aria-label="Step forward">&#9654;</button></span><button class="btn pri" id="next" hidden>Next puzzle</button></div>
-  <div class="foot"><button class="tool" id="flip" aria-pressed="false">Flip board</button><button class="link" id="quit">End run</button></div>
+  <div class="foot"><button class="tool" id="flip" aria-pressed="false">Flip board</button><span id="ahead" aria-live="off"></span><button class="link" id="quit">End run</button></div>
 </main>
 
 <main id="end" class="screen">
@@ -277,7 +288,7 @@ function getChunk(c){
   if (chunkCache[c]) return chunkCache[c];
   var p = fetchBytes('c/' + ('0' + (c % 100)).slice(-2) + '/' + c + '.gz').then(gunzip).then(function(s){ return s.split('\n'); });
   chunkCache[c] = p; chunkKeys.push(c);
-  if (chunkKeys.length > 16) delete chunkCache[chunkKeys.shift()];
+  if (chunkKeys.length > 80) delete chunkCache[chunkKeys.shift()];
   p.catch(function(){ delete chunkCache[c]; });
   return p;
 }
@@ -427,6 +438,30 @@ function goEvery(){
   var sl = $('everyat'), em = +sl.dataset.m; $('everymove').value = em;
   startRun('every', null, everyTouched ? {m:em, i:Math.max(0, (parseInt(sl.value, 10) || 1) - 1)} : {m:em, i:placeIn(em)});
 }
+var retryTimes = 2, aheadN = 10;
+try { var sv = JSON.parse(localStorage.getItem('survival-settings') || '{}') || {};
+  if (sv.retry >= 0 && sv.retry <= 5) retryTimes = Math.floor(sv.retry);
+  if (sv.ahead >= 1 && sv.ahead <= 50) aheadN = Math.floor(sv.ahead); } catch(e) {}
+function setSub(){ $('setsub').textContent = (retryTimes ? retryTimes + (retryTimes === 1 ? ' replay' : ' replays') + ' of each miss' : 'Replays off') + ' · ' + aheadN + ' loaded ahead'; }
+function readSettings(){
+  var a = parseInt($('setretry').value, 10), b = parseInt($('setahead').value, 10);
+  if (a >= 0) retryTimes = Math.min(5, a);
+  if (b >= 1) aheadN = Math.min(50, b);
+  try { localStorage.setItem('survival-settings', JSON.stringify({retry:retryTimes, ahead:aheadN})); } catch(e) {}
+  setSub();
+}
+$('setretry').value = retryTimes; $('setahead').value = aheadN; setSub();
+$('setretry').addEventListener('input', readSettings); $('setahead').addEventListener('input', readSettings);
+$('setretry').addEventListener('change', function(){ this.value = retryTimes; }); $('setahead').addEventListener('change', function(){ this.value = aheadN; });
+$('settoggle').addEventListener('click', function(){
+  var open = this.getAttribute('aria-expanded') !== 'true';
+  this.setAttribute('aria-expanded', open); $('setbody').hidden = !open;
+});
+function missedOf(r){
+  var seen = {}, out = [];
+  r.log.forEach(function(e){ if (!e.ok && !seen[e.p.id]) { seen[e.p.id] = 1; out.push(e.p); } });
+  return out;
+}
 $('ordertoggle').addEventListener('click', function(){
   var open = this.getAttribute('aria-expanded') !== 'true';
   this.setAttribute('aria-expanded', open); $('orderbody').hidden = !open;
@@ -444,8 +479,9 @@ $('again').addEventListener('click', function(){
   else startRun(run.theme, null, run.start);
 });
 $('retry').addEventListener('click', function(){
-  var missed = run.log.filter(function(e){ return !e.ok; }).map(function(e){ return e.p; });
-  if (missed.length) startRun(run.theme, missed, run.start);
+  var missed = missedOf(run), q = [];
+  for (var k = 0; k < retryTimes; k++) q = q.concat(missed);     /* each missed puzzle comes back retryTimes times, one pass after another */
+  if (q.length) startRun(run.theme, q, run.start);
 });
 $('next').addEventListener('click', function(){
   this.hidden = true;
@@ -467,7 +503,7 @@ function startRun(theme, missed, from){
   if (!M || ((theme === 'order' || theme === 'every') && !MO)) return;
   var fm = from && typeof from === 'object' ? from.m : (from || 0);
   if (run) run.over = true;
-  run = {theme:theme, used:{}, score:0, strikes:0, n:0, log:[], review:!!missed, queue:missed ? missed.slice() : null, total:missed ? missed.length : 0, pre:null, over:false, start:fm, per:orderPer, key:theme === 'order' ? 'order-' + fm + '-' + orderPer : theme,
+  run = {theme:theme, used:{}, score:0, strikes:0, n:0, log:[], review:!!missed, queue:missed ? missed.slice() : null, total:missed ? missed.length : 0, buf:[], picked:0, done:false, fails:0, filling:false, waiter:null, over:false, start:fm, per:orderPer, key:theme === 'order' ? 'order-' + fm + '-' + orderPer : theme,
     cur:theme === 'order' ? {m:fm, k:0} : theme === 'every' ? (typeof from === 'object' ? from : {m:fm, i:placeIn(fm)}) : null};
   $('gtheme').textContent = label(theme) + (missed ? ' · retry' : '');
   $('grating').textContent = ''; $('board').innerHTML = ''; $('arrows').innerHTML = '';
@@ -537,23 +573,36 @@ function pick(r, k){
       .catch(function(e){ delete ug[g]; throw e; });
   });
 }
-function nextPuzzle(){
-  var r = run, slow = setTimeout(function(){ if (run === r && !r.over) setStatus('Loading…', ''); }, 300);
-  locked = true; $('next').hidden = true;
-  var p = r.pre ? r.pre.catch(function(){ return pick(r, r.n); }) : pick(r, r.n);
-  r.pre = null;
-  p.then(function(pz){
-    clearTimeout(slow);
-    if (run !== r || r.over) return;
-    if (!pz) return endRun();
-    begin(pz);
-    if (!r.queue) { r.pre = pick(r, r.n); r.pre.catch(function(){}); }   /* fetch the next one while this is being solved */
+/* keep up to aheadN puzzles fetched in advance; failed fetches retry by themselves */
+function fill(r){
+  if (r.filling || r.over || r.queue || r.done || r.buf.length >= aheadN) return;
+  r.filling = true;
+  pick(r, r.picked).then(function(pz){
+    r.filling = false; r.fails = 0;
+    if (pz) { r.picked++; r.buf.push(pz); } else r.done = true;
+    aheadNote(r);
+    if (r.waiter) { var w = r.waiter; r.waiter = null; w(); }
+    fill(r);
   }).catch(function(){
-    clearTimeout(slow);
-    if (run !== r || r.over) return;
-    setStatus('Could not load the next puzzle<small>Check your connection, then try again.</small>', 'bad');
-    $('next').textContent = 'Try again'; $('next').hidden = false; $('stepper').hidden = true; rev = null;
+    r.filling = false; r.fails++;
+    if (r.waiter && run === r && !r.over) setStatus('Waiting for a connection…<small>The run carries on by itself once you are back online.</small>', '');
+    clearTimeout(r.again); r.again = setTimeout(function(){ fill(r); }, Math.min(6000, 800 * r.fails));
   });
+}
+function aheadNote(r){
+  if (run !== r) return;
+  $('ahead').textContent = r.queue ? '' : r.buf.length + ' loaded ahead';
+}
+window.addEventListener('online', function(){ if (run && !run.over) { run.fails = 0; fill(run); } });
+function nextPuzzle(){
+  var r = run;
+  locked = true; $('next').hidden = true;
+  if (r.queue) { var q = r.queue.shift(); aheadNote(r); return q ? begin(q) : endRun(); }
+  if (r.buf.length) { begin(r.buf.shift()); aheadNote(r); fill(r); return; }
+  if (r.done) return endRun();
+  var slow = setTimeout(function(){ if (run === r && !r.over && r.waiter && !r.fails) setStatus('Loading…', ''); }, 300);
+  r.waiter = function(){ clearTimeout(slow); if (run === r && !r.over) nextPuzzle(); };
+  fill(r);
 }
 function begin(p){
   run.used[p.id] = 1; run.n++;
@@ -562,7 +611,7 @@ function begin(p){
   orient = game.turn(); sel = null; dests = []; marks = {}; shapes = [];
   last = p.lm ? [p.lm.slice(0,2), p.lm.slice(2,4)] : null;
   $('next').hidden = true; rev = null; $('stepper').hidden = true;
-  $('grating').textContent = (run.review ? 'Missed puzzle ' + run.n + ' of ' + run.total :
+  $('grating').textContent = (run.review ? 'Retry ' + run.n + ' of ' + run.total :
     p.pos && p.pos.i >= 0 ? 'Move ' + p.pos.m + ' · ' + (p.pos.i + 1).toLocaleString() + ' of ' + MO.counts[p.pos.m].toLocaleString() :
     p.pos ? 'Puzzle ' + run.n + ' · move ' + p.pos.m : 'Puzzle ' + run.n) + ' · rated ' + p.r;
   setStatus('<span class="side ' + orient + '"></span>' + (orient === 'w' ? 'White' : 'Black') + ' to move', '');
@@ -788,12 +837,13 @@ function endRun(){
   if (isBest) { best[run.key] = run.score; saveBest(); }
   $('etheme').textContent = label(run.theme) + (run.theme === 'order' ? ' from move ' + run.start + ' · ' + run.per + ' per move' : run.theme === 'every' ? ' from move ' + run.start : '') + (run.review ? ' · retry' : '');
   $('ebig').textContent = run.score;
-  $('esub').innerHTML = run.review ? 'of ' + run.total + ' missed ' + (run.total === 1 ? 'puzzle' : 'puzzles') + ' solved on retry' :
+  $('esub').innerHTML = run.review ? 'of ' + run.total + (run.total === 1 ? ' retry' : ' retries') + ' solved' :
     (run.score === 1 ? 'puzzle solved' : 'puzzles solved') + ' · ' + (isBest ? '<b>new best</b>' : 'best ' + prev);
   $('again').textContent = run.theme === 'every' ? 'Continue from here' : 'Play again';
-  var nMiss = run.log.filter(function(e){ return !e.ok; }).length;
-  $('retry').hidden = !nMiss;
-  $('retry').textContent = nMiss === 1 ? 'Retry the one you missed' : 'Retry the ' + nMiss + ' you missed';
+  var nMiss = missedOf(run).length;
+  $('retry').hidden = !nMiss || !retryTimes;
+  $('retry').textContent = (nMiss === 1 ? 'Retry the one you missed' : 'Retry the ' + nMiss + ' you missed') + (retryTimes > 1 ? ', ' + retryTimes + ' times each' : '');
+  clearTimeout(run.again);
   $('elog').innerHTML = run.log.slice().reverse().map(function(e){
     return '<li><span class="mk' + (e.ok ? '' : ' x') + '">' + (e.ok ? '✓' : '✕') + '</span><span class="r num">' + e.p.r +
       '</span><a href="https://lichess.org/training/' + e.p.id + '" target="_blank" rel="noopener">Review on Lichess</a></li>';
