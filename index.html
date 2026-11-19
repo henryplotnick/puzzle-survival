@@ -186,7 +186,7 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-off
     <button class="orderhead" id="settoggle" aria-expanded="false" aria-controls="setbody"><div><b>Settings</b><span id="setsub"></span></div><div class="go chev" aria-hidden="true">&#9662;</div></button>
     <div id="setbody" hidden>
       <div class="orderfrom sub"><label for="setretry">Correct solves needed per missed puzzle (0 to 5)</label><input id="setretry" type="number" inputmode="numeric" min="0" max="5" value="2"></div>
-      <p class="ordernote">After a run you can replay the puzzles you got wrong. Each one keeps coming back until you have solved it this many times. 0 turns replays off.</p>
+      <p class="ordernote">After a run you can replay the puzzles you got wrong. Each one keeps coming back until you have solved it this many times, and every miss on a retry adds one more. 0 turns replays off.</p>
       <div class="orderfrom sub"><label for="setahead">Puzzles loaded ahead (1 to 50)</label><input id="setahead" type="number" inputmode="numeric" min="1" max="50" value="10"></div>
       <p class="ordernote">The game fetches this many puzzles in advance, so a run keeps going when your connection drops.</p>
     </div>
@@ -457,7 +457,8 @@ $('settoggle').addEventListener('click', function(){
   var open = this.getAttribute('aria-expanded') !== 'true';
   this.setAttribute('aria-expanded', open); $('setbody').hidden = !open;
 });
-/* retry round: every missed puzzle must be solved retryTimes times; it keeps coming back, pass after pass, until it has been */
+/* retry round: every missed puzzle must be solved retryTimes times, plus once more for each miss during the round;
+   it keeps coming back, pass after pass, until it has been */
 function stillNeeded(r){ return r.pool.filter(function(p){ return r.need[p.id] > 0; }); }
 function solvesLeft(r){ var n = 0; r.pool.forEach(function(p){ n += r.need[p.id]; }); return n; }
 function missedOf(r){
@@ -801,6 +802,7 @@ function solved(){
 }
 function failed(from, to, want){
   locked = true; if (!run.review) run.strikes++; run.log.push({p:cur.p, ok:false}); hud(); keepPlace();
+  if (run.review) run.need[cur.p.id]++;          /* a miss on a retry adds one more solve for that puzzle */
   marks = {}; marks[to] = 'no'; draw();
   setStatus('Wrong move', 'bad');
   timer = setTimeout(function(){
@@ -849,7 +851,7 @@ function endRun(){
   $('ebig').textContent = run.score;
   var left = run.review ? solvesLeft(run) : 0, nPool = run.review ? run.pool.length : 0;
   $('esub').innerHTML = run.review ? (left ? (run.score === 1 ? 'retry' : 'retries') + ' solved \u00b7 ' + left + (left === 1 ? ' solve' : ' solves') + ' still to go' :
-      (run.score === 1 ? 'retry' : 'retries') + ' solved \u00b7 <b>' + (nPool === 1 ? 'the missed puzzle' : 'all ' + nPool + ' missed puzzles') + ' solved ' + (run.times === 1 ? 'once' : run.times === 2 ? 'twice' : run.times + ' times') + '</b>') :
+      (run.score === 1 ? 'retry' : 'retries') + ' solved \u00b7 <b>' + (nPool === 1 ? 'the missed puzzle is' : 'all ' + nPool + ' missed puzzles are') + ' cleared</b>') :
     (run.score === 1 ? 'puzzle solved' : 'puzzles solved') + ' · ' + (isBest ? '<b>new best</b>' : 'best ' + prev);
   $('again').textContent = run.theme === 'every' ? 'Continue from here' : 'Play again';
   var nMiss = run.review ? stillNeeded(run).length : missedOf(run).length;
