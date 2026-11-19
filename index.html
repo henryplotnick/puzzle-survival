@@ -185,8 +185,8 @@ button:focus-visible,a:focus-visible{outline:3px solid var(--accent);outline-off
   <section class="order" id="setcard">
     <button class="orderhead" id="settoggle" aria-expanded="false" aria-controls="setbody"><div><b>Settings</b><span id="setsub"></span></div><div class="go chev" aria-hidden="true">&#9662;</div></button>
     <div id="setbody" hidden>
-      <div class="orderfrom sub"><label for="setretry">Replays of each missed puzzle (0 to 5)</label><input id="setretry" type="number" inputmode="numeric" min="0" max="5" value="2"></div>
-      <p class="ordernote">After a run you can replay the puzzles you got wrong. Each one comes back this many times. 0 turns replays off.</p>
+      <div class="orderfrom sub"><label for="setretry">Correct solves needed per missed puzzle (0 to 5)</label><input id="setretry" type="number" inputmode="numeric" min="0" max="5" value="2"></div>
+      <p class="ordernote">After a run you can replay the puzzles you got wrong. Each one keeps coming back until you have solved it this many times. 0 turns replays off.</p>
       <div class="orderfrom sub"><label for="setahead">Puzzles loaded ahead (1 to 50)</label><input id="setahead" type="number" inputmode="numeric" min="1" max="50" value="10"></div>
       <p class="ordernote">The game fetches this many puzzles in advance, so a run keeps going when your connection drops.</p>
     </div>
@@ -442,7 +442,7 @@ var retryTimes = 2, aheadN = 10;
 try { var sv = JSON.parse(localStorage.getItem('survival-settings') || '{}') || {};
   if (sv.retry >= 0 && sv.retry <= 5) retryTimes = Math.floor(sv.retry);
   if (sv.ahead >= 1 && sv.ahead <= 50) aheadN = Math.floor(sv.ahead); } catch(e) {}
-function setSub(){ $('setsub').textContent = (retryTimes ? retryTimes + (retryTimes === 1 ? ' replay' : ' replays') + ' of each miss' : 'Replays off') + ' · ' + aheadN + ' loaded ahead'; }
+function setSub(){ $('setsub').textContent = (retryTimes ? 'Solve each miss ' + (retryTimes === 1 ? 'once' : retryTimes === 2 ? 'twice' : retryTimes + ' times') : 'Replays off') + ' · ' + aheadN + ' loaded ahead'; }
 function readSettings(){
   var a = parseInt($('setretry').value, 10), b = parseInt($('setahead').value, 10);
   if (a >= 0) retryTimes = Math.min(5, a);
@@ -457,6 +457,9 @@ $('settoggle').addEventListener('click', function(){
   var open = this.getAttribute('aria-expanded') !== 'true';
   this.setAttribute('aria-expanded', open); $('setbody').hidden = !open;
 });
+/* retry round: every missed puzzle must be solved retryTimes times; it keeps coming back, pass after pass, until it has been */
+function stillNeeded(r){ return r.pool.filter(function(p){ return r.need[p.id] > 0; }); }
+function solvesLeft(r){ var n = 0; r.pool.forEach(function(p){ n += r.need[p.id]; }); return n; }
 function missedOf(r){
   var seen = {}, out = [];
   r.log.forEach(function(e){ if (!e.ok && !seen[e.p.id]) { seen[e.p.id] = 1; out.push(e.p); } });
@@ -479,9 +482,8 @@ $('again').addEventListener('click', function(){
   else startRun(run.theme, null, run.start);
 });
 $('retry').addEventListener('click', function(){
-  var missed = missedOf(run), q = [];
-  for (var k = 0; k < retryTimes; k++) q = q.concat(missed);     /* each missed puzzle comes back retryTimes times, one pass after another */
-  if (q.length) startRun(run.theme, q, run.start);
+  var missed = run.review ? stillNeeded(run) : missedOf(run);
+  if (missed.length && retryTimes) startRun(run.theme, missed, run.start, run.review ? run.need : null);   /* keep progress when carrying on */
 });
 $('next').addEventListener('click', function(){
   this.hidden = true;
@@ -499,12 +501,16 @@ $('quit').addEventListener('click', function(){ if (run) { clearTimeout(timer); 
 var run = null, cur = null, game = null, orient = 'w', sel = null, dests = [], last = null, marks = {}, locked = true, timer = 0, pending = null;
 var START = 600, STEP = 40, MAXR = 2900, STRIKES = 3;
 
-function startRun(theme, missed, from){
+function startRun(theme, missed, from, need){
   if (!M || ((theme === 'order' || theme === 'every') && !MO)) return;
   var fm = from && typeof from === 'object' ? from.m : (from || 0);
   if (run) run.over = true;
   run = {theme:theme, used:{}, score:0, strikes:0, n:0, log:[], review:!!missed, queue:missed ? missed.slice() : null, total:missed ? missed.length : 0, buf:[], picked:0, done:false, fails:0, filling:false, waiter:null, over:false, start:fm, per:orderPer, key:theme === 'order' ? 'order-' + fm + '-' + orderPer : theme,
     cur:theme === 'order' ? {m:fm, k:0} : theme === 'every' ? (typeof from === 'object' ? from : {m:fm, i:placeIn(fm)}) : null};
+  if (missed) {
+    run.pool = missed.slice(); run.need = {}; run.times = retryTimes; run.total = missed.length * retryTimes;
+    missed.forEach(function(p){ run.need[p.id] = need && need[p.id] > 0 ? need[p.id] : retryTimes; });
+  }
   $('gtheme').textContent = label(theme) + (missed ? ' · retry' : '');
   $('grating').textContent = ''; $('board').innerHTML = ''; $('arrows').innerHTML = '';
   setStatus('', '');
@@ -597,7 +603,10 @@ window.addEventListener('online', function(){ if (run && !run.over) { run.fails 
 function nextPuzzle(){
   var r = run;
   locked = true; $('next').hidden = true;
-  if (r.queue) { var q = r.queue.shift(); aheadNote(r); return q ? begin(q) : endRun(); }
+  if (r.queue) {
+    if (!r.queue.length) r.queue = stillNeeded(r);            /* next pass: only the ones not yet solved enough times */
+    var q = r.queue.shift(); aheadNote(r); return q ? begin(q) : endRun();
+  }
   if (r.buf.length) { begin(r.buf.shift()); aheadNote(r); fill(r); return; }
   if (r.done) return endRun();
   var slow = setTimeout(function(){ if (run === r && !r.over && r.waiter && !r.fails) setStatus('Loading…', ''); }, 300);
@@ -611,7 +620,7 @@ function begin(p){
   orient = game.turn(); sel = null; dests = []; marks = {}; shapes = [];
   last = p.lm ? [p.lm.slice(0,2), p.lm.slice(2,4)] : null;
   $('next').hidden = true; rev = null; $('stepper').hidden = true;
-  $('grating').textContent = (run.review ? 'Retry ' + run.n + ' of ' + run.total :
+  $('grating').textContent = (run.review ? 'Retry · ' + solvesLeft(run) + (solvesLeft(run) === 1 ? ' solve' : ' solves') + ' to go' :
     p.pos && p.pos.i >= 0 ? 'Move ' + p.pos.m + ' · ' + (p.pos.i + 1).toLocaleString() + ' of ' + MO.counts[p.pos.m].toLocaleString() :
     p.pos ? 'Puzzle ' + run.n + ' · move ' + p.pos.m : 'Puzzle ' + run.n) + ' · rated ' + p.r;
   setStatus('<span class="side ' + orient + '"></span>' + (orient === 'w' ? 'White' : 'Black') + ' to move', '');
@@ -785,6 +794,7 @@ function play(from, to, promo, slid){
 function keepPlace(){ if (!run.review && run.theme === 'every' && cur.p.pos) saveOrder({m:cur.p.pos.m, i:cur.p.pos.i + 1}); }
 function solved(){
   locked = true; run.score++; run.log.push({p:cur.p, ok:true}); hud(); keepPlace();
+  if (run.review && run.need[cur.p.id] > 0) run.need[cur.p.id]--;
   marks = {}; marks[last[1]] = 'ok'; draw();
   setStatus('Solved', 'good');
   timer = setTimeout(nextPuzzle, 550);
@@ -806,7 +816,7 @@ function failed(from, to, want){
     $('stepper').hidden = false;
     showFrame(cur.i + 1, true);
     var nx = $('next');
-    nx.textContent = ((!run.review && run.strikes >= STRIKES) || (run.queue && !run.queue.length)) ? 'See results' : 'Next puzzle';
+    nx.textContent = (!run.review && run.strikes >= STRIKES) ? 'See results' : 'Next puzzle';
     nx.hidden = false;
   }, 650);
 }
@@ -837,12 +847,14 @@ function endRun(){
   if (isBest) { best[run.key] = run.score; saveBest(); }
   $('etheme').textContent = label(run.theme) + (run.theme === 'order' ? ' from move ' + run.start + ' · ' + run.per + ' per move' : run.theme === 'every' ? ' from move ' + run.start : '') + (run.review ? ' · retry' : '');
   $('ebig').textContent = run.score;
-  $('esub').innerHTML = run.review ? 'of ' + run.total + (run.total === 1 ? ' retry' : ' retries') + ' solved' :
+  var left = run.review ? solvesLeft(run) : 0, nPool = run.review ? run.pool.length : 0;
+  $('esub').innerHTML = run.review ? (left ? (run.score === 1 ? 'retry' : 'retries') + ' solved \u00b7 ' + left + (left === 1 ? ' solve' : ' solves') + ' still to go' :
+      (run.score === 1 ? 'retry' : 'retries') + ' solved \u00b7 <b>' + (nPool === 1 ? 'the missed puzzle' : 'all ' + nPool + ' missed puzzles') + ' solved ' + (run.times === 1 ? 'once' : run.times === 2 ? 'twice' : run.times + ' times') + '</b>') :
     (run.score === 1 ? 'puzzle solved' : 'puzzles solved') + ' · ' + (isBest ? '<b>new best</b>' : 'best ' + prev);
   $('again').textContent = run.theme === 'every' ? 'Continue from here' : 'Play again';
-  var nMiss = missedOf(run).length;
+  var nMiss = run.review ? stillNeeded(run).length : missedOf(run).length;
   $('retry').hidden = !nMiss || !retryTimes;
-  $('retry').textContent = nMiss === 1 ? 'Retry the one you missed' : 'Retry the ' + nMiss + ' you missed';
+  $('retry').textContent = run.review ? (nMiss === 1 ? 'Keep retrying the one left' : 'Keep retrying the ' + nMiss + ' left') : (nMiss === 1 ? 'Retry the one you missed' : 'Retry the ' + nMiss + ' you missed');
   clearTimeout(run.again);
   $('elog').innerHTML = run.log.slice().reverse().map(function(e){
     return '<li><span class="mk' + (e.ok ? '' : ' x') + '">' + (e.ok ? '✓' : '✕') + '</span><span class="r num">' + e.p.r +
