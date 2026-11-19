@@ -842,7 +842,7 @@ function endRun(){
   $('again').textContent = run.theme === 'every' ? 'Continue from here' : 'Play again';
   var nMiss = missedOf(run).length;
   $('retry').hidden = !nMiss || !retryTimes;
-  $('retry').textContent = (nMiss === 1 ? 'Retry the one you missed' : 'Retry the ' + nMiss + ' you missed') + (retryTimes > 1 ? ', ' + retryTimes + ' times each' : '');
+  $('retry').textContent = nMiss === 1 ? 'Retry the one you missed' : 'Retry the ' + nMiss + ' you missed';
   clearTimeout(run.again);
   $('elog').innerHTML = run.log.slice().reverse().map(function(e){
     return '<li><span class="mk' + (e.ok ? '' : ' x') + '">' + (e.ok ? '✓' : '✕') + '</span><span class="r num">' + e.p.r +
